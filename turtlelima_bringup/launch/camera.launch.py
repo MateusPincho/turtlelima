@@ -1,23 +1,9 @@
-"""Launch the Intel RealSense camera node for the turtlelima robot.
-
-Every camera setting is a launch argument, so it can be changed from the
-command line, for example:
-
-    ros2 launch turtlelima_bringup camera.launch.py \
-        color_profile:=1280x720x15 align_depth:=false transport_format:=jpeg
-
-Compressed topics (``.../compressed`` and ``.../compressedDepth``) are
-published by the image_transport plugins when they are installed in the
-environment (``ros-<distro>-image-transport-plugins``).
-"""
-
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
-# name, default, description
-# Values are converted to bool/int/float/str from their default's type.
+
 CAMERA_ARGS = [
     ('camera_name', 'realsense', 'Node name and TF prefix of the camera'),
     ('camera_namespace', 'camera', 'Namespace of the camera node'),
@@ -42,20 +28,20 @@ CAMERA_ARGS = [
     ('enable_sync', True, 'Synchronize the streams by timestamp'),
     ('pointcloud', False, 'Publish a point cloud'),
     ('pointcloud_ordered', False, 'Organized (image-shaped) point cloud'),
-    # --- depth quality ---
-    ('clip_distance', 5.0, 'Drop depth beyond this distance in meters (<0 = off)'),
+
+    ('clip_distance', 4.0, 'Drop depth beyond this distance in meters (<0 = off)'),
     ('filters', 'spatial,temporal,hole_filling',
      'Comma separated post-processing filters (spatial, temporal, '
      'hole_filling, decimation, disparity, ...). "" = none'),
     ('emitter_enabled', True, 'IR projector on. Turn off outdoors or to cut interference'),
     ('color_auto_exposure', True, 'Color auto exposure'),
     ('depth_auto_exposure', True, 'Depth auto exposure'),
-    # --- TF / diagnostics ---
+
     ('publish_tf', True, 'Publish the camera static TF tree'),
     ('tf_publish_rate', 0.0, 'TF rate in Hz (0 = static transforms only)'),
     ('base_frame_id', 'link', 'Base frame of the camera TF tree'),
     ('diagnostics_period', 0.0, 'Diagnostics period in seconds (0 = off)'),
-    # --- image transport ---
+
     ('transport_format', 'png', 'Encoding of the "compressed" color topics: png or jpeg'),
     ('png_level', 3, 'PNG compression level 0-9 (higher = smaller, more CPU)'),
     ('jpeg_quality', 90, 'JPEG quality 1-100 (used if transport_format is jpeg)'),
