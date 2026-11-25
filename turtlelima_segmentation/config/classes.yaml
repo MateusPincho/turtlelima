@@ -1,0 +1,123 @@
+# Navigation classes for indoor driving. Model (ADE20K) classes are merged by name:
+# P(group) = sum of P(class) over its classes, then argmax over groups.
+# Any ADE20K class not listed falls in `default_group`.
+default_group: 0
+
+groups:
+  - id: 0
+    name: unknown        # ceiling, sky, lamps, outdoor classes, ...
+    color: black
+    classes: []
+
+  - id: 1
+    name: floor
+    color: "#2ecc71"
+    classes: [floor, rug]
+
+  - id: 2
+    name: wall
+    color: "#3498db"
+    classes:
+      - wall
+      - door
+      - screen door
+      - windowpane
+      - curtain
+      - blind
+      - mirror
+      - painting
+      - poster
+      - bulletin board
+      - sconce
+      - column
+
+  - id: 3
+    name: obstacle
+    color: "#e74c3c"
+    classes:
+      # people / animals
+      - person
+      - animal
+      # seating and tables
+      - chair
+      - swivel chair
+      - armchair
+      - seat
+      - stool
+      - bench
+      - ottoman
+      - sofa
+      - table
+      - coffee table
+      - desk
+      - bed
+      - cradle
+      # storage
+      - cabinet
+      - chest of drawers
+      - wardrobe
+      - shelf
+      - bookcase
+      - buffet
+      - counter
+      - countertop
+      - kitchen island
+      - case
+      # loose objects on the floor
+      - box
+      - bag
+      - basket
+      - barrel
+      - ashcan
+      - bottle
+      - ball
+      - plaything
+      - plant
+      - flower
+      - vase
+      - pot
+      - tray
+      - plate
+      - glass
+      - food
+      - book
+      - cushion
+      - pillow
+      - blanket
+      - towel
+      - apparel
+      - sculpture
+      - bicycle
+      - minibike
+      # appliances / fixtures standing on the floor
+      - refrigerator
+      - oven
+      - stove
+      - microwave
+      - dishwasher
+      - washer
+      - sink
+      - toilet
+      - bathtub
+      - shower
+      - radiator
+      - fireplace
+      - television receiver
+      - computer
+      - monitor
+      - screen
+      - crt screen
+      - pool table
+      - arcade machine
+      - booth
+      - base
+      - pole
+      - railing
+      - bannister
+      - fence
+      - tent
+      # level changes are hazards for a wheeled robot
+      - stairs
+      - stairway
+      - step
+      - escalator
