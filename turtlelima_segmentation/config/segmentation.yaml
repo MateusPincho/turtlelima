@@ -1,0 +1,8 @@
+semantic_segmentation:
+  ros__parameters:
+    model_variant: b2          # b0 | b2 | b5
+    use_tensorrt: true         # prefer '<model>-trt.onnx' when it exists
+    execution_provider: ''     # '' = best available (TensorRT > CUDA > CPU)
+    model_dir: ''              # '' = <share>/turtlelima_segmentation/models
+    segmenter_config_file: default  # 'default' = config/classes.yaml; '' = all model labels; or a path
+    frame_id: camera
