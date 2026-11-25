@@ -121,7 +121,8 @@ class BaseSegmenter(ABC):
         """Merge model classes (by name) into coarser groups via a class->group matrix."""
         from PIL import ImageColor
 
-        name2id = {name: id for id, name in id2label.items()}
+        # Exported label names can carry stray whitespace (e.g. 'bed '), so compare trimmed
+        name2id = {name.strip(): id for id, name in id2label.items()}
         group_ids = [int(g['id']) for g in self.groups]
         if len(set(group_ids)) != len(group_ids):
             raise ValueError(f"'{self.config_file}' has duplicated group ids")
@@ -132,7 +133,7 @@ class BaseSegmenter(ABC):
         mapping = np.full(num_classes, self.default_group, dtype=np.int64)
         assigned = {}
         for group in self.groups:
-            for name in group.get('classes') or []:
+            for name in (str(c).strip() for c in group.get('classes') or []):
                 if name not in name2id:
                     raise ValueError(
                         f"Class '{name}' of group '{group['name']}' is not in the model labels")
