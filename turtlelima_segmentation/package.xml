@@ -3,9 +3,27 @@
 <package format="3">
   <name>turtlelima_segmentation</name>
   <version>0.0.0</version>
-  <description>TODO: Package description</description>
+  <description>
+    Semantic segmentation lifecycle node (SegFormer b0/b2/b5 via ONNX Runtime with TensorRT).
+    Publishes mask, confidence and label_info. Requires the pip package onnxruntime-gpu
+    (not available as a rosdep key).
+  </description>
   <maintainer email="root@todo.todo">root</maintainer>
   <license>Apache-2.0</license>
+
+  <exec_depend>rclpy</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>vision_msgs</exec_depend>
+  <exec_depend>cv_bridge</exec_depend>
+  <exec_depend>ament_index_python</exec_depend>
+  <exec_depend>lifecycle_msgs</exec_depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>python3-numpy</exec_depend>
+  <exec_depend>python3-opencv</exec_depend>
+  <exec_depend>python3-pil</exec_depend>
+  <exec_depend>python3-yaml</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
