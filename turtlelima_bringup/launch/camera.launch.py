@@ -20,9 +20,9 @@ CAMERA_ARGS = [
     ('enable_gyro', False, 'Enable the gyroscope (IMU models only)'),
     ('enable_accel', False, 'Enable the accelerometer (IMU models only)'),
 
-    ('color_profile', '640x480x30', 'Color profile WIDTHxHEIGHTxFPS'),
-    ('depth_profile', '640x480x30', 'Depth profile WIDTHxHEIGHTxFPS'),
-    ('infra_profile', '640x480x30', 'Infrared profile WIDTHxHEIGHTxFPS'),
+    ('color_profile', '640x480x15', 'Color profile WIDTHxHEIGHTxFPS'),
+    ('depth_profile', '640x480x15', 'Depth profile WIDTHxHEIGHTxFPS'),
+    ('infra_profile', '640x480x15', 'Infrared profile WIDTHxHEIGHTxFPS'),
 
     ('align_depth', True, 'Publish depth aligned to the color frame'),
     ('enable_sync', True, 'Synchronize the streams by timestamp'),
