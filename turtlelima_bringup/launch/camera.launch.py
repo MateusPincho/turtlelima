@@ -26,8 +26,8 @@ CAMERA_ARGS = [
 
     ('align_depth', True, 'Publish depth aligned to the color frame'),
     ('enable_sync', True, 'Synchronize the streams by timestamp'),
-    ('pointcloud', False, 'Publish a point cloud'),
-    ('pointcloud_ordered', False, 'Organized (image-shaped) point cloud'),
+    ('pointcloud', True, 'Publish a point cloud'),
+    ('pointcloud_ordered', True, 'Organized (image-shaped) point cloud'),
 
     ('clip_distance', 4.0, 'Drop depth beyond this distance in meters (<0 = off)'),
     ('filters', 'spatial,temporal,hole_filling',
