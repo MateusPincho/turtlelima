@@ -128,8 +128,16 @@ class SemanticSegmenter(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
         )
 
-        self.mask_publisher = self.create_lifecycle_publisher(Image, 'mask', 10)
-        self.confidence_publisher = self.create_lifecycle_publisher(Image, 'confidence', 10)
+        # Reliable so the image_transport republisher (reliable by default) can
+        # subscribe; depth 1 so a slow reader gets the newest mask, not a backlog.
+        output_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+        )
+        self.mask_publisher = self.create_lifecycle_publisher(Image, 'mask', output_qos)
+        self.confidence_publisher = self.create_lifecycle_publisher(
+            Image, 'confidence', output_qos)
         self.labels_publisher = self.create_publisher(LabelInfo, 'label_info', latched_qos)
         self.palette_publisher = self.create_publisher(Image, 'class_palette', latched_qos)
         self.image_subscriber = self.create_subscription(

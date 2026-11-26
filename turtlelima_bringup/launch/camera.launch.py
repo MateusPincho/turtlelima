@@ -26,8 +26,16 @@ CAMERA_ARGS = [
 
     ('align_depth', True, 'Publish depth aligned to the color frame'),
     ('enable_sync', True, 'Synchronize the streams by timestamp'),
-    ('pointcloud', False, 'Publish a point cloud'),
-    ('pointcloud_ordered', False, 'Organized (image-shaped) point cloud'),
+    ('pointcloud', True, 'Publish a point cloud (needed by the semantic segmentation layer)'),
+    ('pointcloud_ordered', True,
+     'Organized (image-shaped) point cloud. The segmentation layer needs it: '
+     'mask pixel (u,v) is matched to point (u,v)'),
+
+    ('color_qos', 'SYSTEM_DEFAULT',
+     'QoS of the color topics: SYSTEM_DEFAULT (reliable), SENSOR_DATA (best effort), ...'),
+    ('depth_qos', 'SYSTEM_DEFAULT', 'QoS of the depth topics'),
+    ('pointcloud_qos', 'SENSOR_DATA',
+     'QoS of the point cloud. SENSOR_DATA matches the segmentation layer subscriber'),
 
     ('clip_distance', 4.0, 'Drop depth beyond this distance in meters (<0 = off)'),
     ('filters', 'spatial,temporal,hole_filling',
@@ -42,12 +50,11 @@ CAMERA_ARGS = [
     ('base_frame_id', 'link', 'Base frame of the camera TF tree'),
     ('diagnostics_period', 0.0, 'Diagnostics period in seconds (0 = off)'),
 
-    ('transport_format', 'png', 'Encoding of the "compressed" color topics: png or jpeg'),
-    ('png_level', 3, 'PNG compression level 0-9 (higher = smaller, more CPU)'),
-    ('jpeg_quality', 90, 'JPEG quality 1-100 (used if transport_format is jpeg)'),
-    ('depth_png_level', 1, 'PNG level of the compressedDepth topics (0-9)'),
-    ('depth_max', 10.0, 'compressedDepth: max depth in meters kept when quantizing'),
-    ('depth_quantization', 100.0, 'compressedDepth: quantization for 32FC1 depth images'),
+    ('transport_format', 'jpeg',
+     'Encoding of color/image_raw/compressed: jpeg (small, for the remote '
+     'segmentation server) or png'),
+    ('png_level', 3, 'PNG compression level 0-9 (used if transport_format is png)'),
+    ('jpeg_quality', 80, 'JPEG quality 1-100 (used if transport_format is jpeg)'),
 
     ('log_level', 'info', 'ROS log level of the camera node'),
 ]
@@ -64,17 +71,49 @@ def _typed(name, value, default):
     return value
 
 
-def _transport_params(topic, cfg):
+# Only the color image leaves the robot (compressed, to the segmentation server).
+# Every other image topic publishes raw only, so no CPU is spent encoding
+# theora/zstd/compressed/compressedDepth variants nobody subscribes to.
+COMPRESSED_TOPICS = ('color/image_raw',)
+RAW_ONLY_TOPICS = (
+    'depth/image_rect_raw',
+    'aligned_depth_to_color/image_raw',
+    'infra1/image_rect_raw',
+    'infra2/image_rect_raw',
+)
 
+
+def _param_bases(topic, cfg):
+    """Parameter prefixes image_transport may derive for a topic.
+
+    The prefix depends on how the topic is resolved against the node
+    namespace, so all forms are set; the ones the node does not declare are ignored.
+    """
+    name, namespace = cfg['camera_name'], cfg['camera_namespace']
+    bases = []
+    for path in (topic, f'{name}/{topic}', f'{namespace}/{name}/{topic}'):
+        base = path.replace('/', '.')
+        # Jazzy strips the node namespace from the resolved topic, which can
+        # leave a leading '/' and so a leading '.' in the parameter name.
+        bases += [base, f'.{base}']
+    return bases
+
+
+def _transport_params(cfg):
     params = {}
-    for base in (topic, f'{cfg["camera_namespace"]}.{cfg["camera_name"]}.{topic}'):
-        base = base.replace('/', '.')
-        params[f'{base}.compressed.format'] = cfg['transport_format']
-        params[f'{base}.compressed.png_level'] = cfg['png_level']
-        params[f'{base}.compressed.jpeg_quality'] = cfg['jpeg_quality']
-        params[f'{base}.compressedDepth.png_level'] = cfg['depth_png_level']
-        params[f'{base}.compressedDepth.depth_max'] = cfg['depth_max']
-        params[f'{base}.compressedDepth.depth_quantization'] = cfg['depth_quantization']
+    for topic in COMPRESSED_TOPICS:
+        for base in _param_bases(topic, cfg):
+            params[f'{base}.enable_pub_plugins'] = [
+                'image_transport/raw', 'image_transport/compressed']
+            # Jazzy's compressed plugin declares both <base>.<param> and the
+            # older <base>.compressed.<param>.
+            for prefix in (base, f'{base}.compressed'):
+                params[f'{prefix}.format'] = cfg['transport_format']
+                params[f'{prefix}.png_level'] = cfg['png_level']
+                params[f'{prefix}.jpeg_quality'] = cfg['jpeg_quality']
+    for topic in RAW_ONLY_TOPICS:
+        for base in _param_bases(topic, cfg):
+            params[f'{base}.enable_pub_plugins'] = ['image_transport/raw']
     return params
 
 
@@ -104,6 +143,12 @@ def _launch_camera(context):
         'enable_sync': cfg['enable_sync'],
         'pointcloud.enable': cfg['pointcloud'],
         'pointcloud.ordered_pc': cfg['pointcloud_ordered'],
+        'pointcloud.pointcloud_qos': cfg['pointcloud_qos'],
+        # The QoS names changed between wrapper versions; the unused form is ignored.
+        'color_qos': cfg['color_qos'],
+        'rgb_camera.color_qos': cfg['color_qos'],
+        'depth_qos': cfg['depth_qos'],
+        'depth_module.depth_qos': cfg['depth_qos'],
         'clip_distance': cfg['clip_distance'],
         'filters': cfg['filters'],
         'depth_module.emitter_enabled': 1 if cfg['emitter_enabled'] else 0,
@@ -115,12 +160,7 @@ def _launch_camera(context):
         'diagnostics_period': cfg['diagnostics_period'],
     }
 
-    for topic in ('color/image_raw',
-                  'depth/image_rect_raw',
-                  'aligned_depth_to_color/image_raw',
-                  'infra1/image_rect_raw',
-                  'infra2/image_rect_raw'):
-        parameters.update(_transport_params(topic, cfg))
+    parameters.update(_transport_params(cfg))
 
     return [
         Node(
