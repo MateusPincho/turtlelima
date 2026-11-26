@@ -7,8 +7,6 @@ from launch_ros.actions import Node
 CAMERA_ARGS = [
     ('camera_name', 'realsense', 'Node name and TF prefix of the camera'),
     ('camera_namespace', 'camera', 'Namespace of the camera node'),
-    ('serial_no', '', 'Serial number of the device to open ("" = first found)'),
-    ('usb_port_id', '', 'USB port of the device to open ("" = any)'),
     ('initial_reset', True, 'Reset the device on start (recovers a stuck USB link)'),
     ('wait_for_device_timeout', -1.0, 'Seconds to wait for a device at start (-1 = forever)'),
     ('reconnect_timeout', 6.0, 'Seconds between reconnection attempts after a disconnect'),
@@ -31,14 +29,19 @@ CAMERA_ARGS = [
      'Organized (image-shaped) point cloud. The segmentation layer needs it: '
      'mask pixel (u,v) is matched to point (u,v)'),
 
-    ('color_qos', 'SYSTEM_DEFAULT',
-     'QoS of the color topics: SYSTEM_DEFAULT (reliable), SENSOR_DATA (best effort), ...'),
-    ('depth_qos', 'SYSTEM_DEFAULT', 'QoS of the depth topics'),
+    # Everything is best effort (sensor data), as the segmentation pipeline and
+    # the costmap layer expect.
+    ('color_qos', 'SENSOR_DATA',
+     'QoS of the color topics: SENSOR_DATA (best effort) or SYSTEM_DEFAULT (reliable)'),
+    ('depth_qos', 'SENSOR_DATA', 'QoS of the depth topics'),
+    ('pointcloud_filter', 'pointcloud__neon_',
+     'Name of the wrapper\'s point cloud filter, used as parameter prefix: '
+     'pointcloud__neon_ on ARM (Jetson) builds, pointcloud on x86'),
     ('pointcloud_qos', 'SENSOR_DATA',
      'QoS of the point cloud. SENSOR_DATA matches the segmentation layer subscriber'),
 
     ('clip_distance', 4.0, 'Drop depth beyond this distance in meters (<0 = off)'),
-    ('filters', 'spatial,temporal,hole_filling',
+    ('filters', '',
      'Comma separated post-processing filters (spatial, temporal, '
      'hole_filling, decimation, disparity, ...). "" = none'),
     ('emitter_enabled', True, 'IR projector on. Turn off outdoors or to cut interference'),
@@ -141,9 +144,9 @@ def _launch_camera(context):
         'depth_module.infra_profile': cfg['infra_profile'],
         'align_depth.enable': cfg['align_depth'],
         'enable_sync': cfg['enable_sync'],
-        'pointcloud.enable': cfg['pointcloud'],
-        'pointcloud.ordered_pc': cfg['pointcloud_ordered'],
-        'pointcloud.pointcloud_qos': cfg['pointcloud_qos'],
+        f'{cfg["pointcloud_filter"]}.enable': cfg['pointcloud'],
+        f'{cfg["pointcloud_filter"]}.ordered_pc': cfg['pointcloud_ordered'],
+        f'{cfg["pointcloud_filter"]}.pointcloud_qos': cfg['pointcloud_qos'],
         # The QoS names changed between wrapper versions; the unused form is ignored.
         'color_qos': cfg['color_qos'],
         'rgb_camera.color_qos': cfg['color_qos'],

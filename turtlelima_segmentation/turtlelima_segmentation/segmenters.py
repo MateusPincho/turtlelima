@@ -166,11 +166,27 @@ class BaseSegmenter(ABC):
         pass
 
     def run_segmentation(self, raw_image):
-        """Return (RGB mask, confidence); confidence is None if the model gives none."""
+        """Return (class id mask, confidence) at the input image resolution.
+
+        The mask is uint8 HxW, one class id per pixel. Confidence is uint8 HxW
+        in 0-255, or None if the model gives none.
+        """
         model_input = self._process_model_input(raw_image)
         model_output = self._segment_in_model(model_input)
 
         return self._process_model_output(model_output)
+
+    def colorize(self, mask):
+        """RGB image of a class id mask, for visualization."""
+        if not len(self.palette):
+            return np.zeros(mask.shape + (3,), dtype=np.uint8)
+        return self.palette[np.minimum(mask, len(self.palette) - 1)]
+
+    @staticmethod
+    def check_id_space(num_ids):
+        # The mask is mono8, so every class id must fit in a byte
+        if num_ids > 256:
+            raise ValueError(f'{num_ids} class ids do not fit a mono8 mask (max 256)')
 
 
 class Bypass(BaseSegmenter):
@@ -181,7 +197,8 @@ class Bypass(BaseSegmenter):
         return model_input
 
     def _process_model_output(self, model_output):
-        return model_output, None
+        # No model: every pixel is class 0
+        return np.zeros(model_output.shape[:2], dtype=np.uint8), None
 
 
 class SegFormer(BaseSegmenter):
@@ -222,9 +239,9 @@ class SegFormer(BaseSegmenter):
         self.image_std = self.image_std.reshape(3, 1, 1)
 
         # Metadata is JSON, so its class ids arrive as strings
-        self.match_model_classes(
-            {int(id): name for id, name in json.loads(metadata['id2label']).items()}
-        )
+        id2label = {int(id): name for id, name in json.loads(metadata['id2label']).items()}
+        self.check_id_space(max(id2label) + 1)
+        self.match_model_classes(id2label)
 
     def _process_model_input(self, raw_image):
         self.latest_image = raw_image
@@ -252,10 +269,11 @@ class SegFormer(BaseSegmenter):
 
         probs = probs.transpose(1, 2, 0)
         probs = self.cv2.resize(probs, (width, height), interpolation=self.cv2.INTER_LINEAR)
-        raw_mask = probs.argmax(axis=-1)
-        confidence = probs.max(axis=-1).astype(np.float32)
+        mask = probs.argmax(axis=-1).astype(np.uint8)
+        # Probability 0-1 -> 0-255, the range the costmap layer expects
+        confidence = np.clip(probs.max(axis=-1) * 255.0 + 0.5, 0, 255).astype(np.uint8)
 
-        return self.palette[raw_mask], confidence
+        return mask, confidence
 
 
 # A new BaseSegmenter childclass appears here with the same class name automatically

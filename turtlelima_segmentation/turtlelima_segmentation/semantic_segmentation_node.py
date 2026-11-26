@@ -3,6 +3,7 @@
 import os
 import warnings
 
+import numpy as np
 import rclpy
 from ament_index_python.packages import get_package_share_directory
 from cv_bridge import CvBridge
@@ -128,16 +129,20 @@ class SemanticSegmenter(Node):
             reliability=QoSReliabilityPolicy.RELIABLE,
         )
 
-        # Reliable so the image_transport republisher (reliable by default) can
-        # subscribe; depth 1 so a slow reader gets the newest mask, not a backlog.
+        # Sensor data QoS, as the semantic segmentation costmap layer subscribes:
+        # best effort, and depth 1 so a slow link never queues old masks.
         output_qos = QoSProfile(
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
-            reliability=QoSReliabilityPolicy.RELIABLE,
+            reliability=QoSReliabilityPolicy.BEST_EFFORT,
         )
+        # mono8 class ids and mono8 confidence (0-255) for the costmap layer
         self.mask_publisher = self.create_lifecycle_publisher(Image, 'mask', output_qos)
         self.confidence_publisher = self.create_lifecycle_publisher(
             Image, 'confidence', output_qos)
+        # rgb8 colorized mask for visualization; only built when someone subscribes
+        self.mask_color_publisher = self.create_lifecycle_publisher(
+            Image, 'mask_color', output_qos)
         self.labels_publisher = self.create_publisher(LabelInfo, 'label_info', latched_qos)
         self.palette_publisher = self.create_publisher(Image, 'class_palette', latched_qos)
         self.image_subscriber = self.create_subscription(
@@ -162,6 +167,7 @@ class SemanticSegmenter(Node):
         self.destroy_subscription(self.image_subscriber)
         self.destroy_publisher(self.mask_publisher)
         self.destroy_publisher(self.confidence_publisher)
+        self.destroy_publisher(self.mask_color_publisher)
         self.destroy_publisher(self.labels_publisher)
         self.destroy_publisher(self.palette_publisher)
 
@@ -202,25 +208,34 @@ class SemanticSegmenter(Node):
         img_rgb = self.bridge.imgmsg_to_cv2(img_msg, desired_encoding='rgb8')
         start = self.get_clock().now()
 
-        mask_rgb, confidence = self.segmenter.run_segmentation(img_rgb)
+        mask, confidence = self.segmenter.run_segmentation(img_rgb)
 
         elapsed = self.get_clock().now() - start
         self.get_logger().debug(f'Inference time: {elapsed.nanoseconds * 1e-6:.3f} ms')
 
-        mask_msg = self.bridge.cv2_to_imgmsg(mask_rgb, encoding='rgb8', header=img_msg.header)
+        # Same header as the source image, so the layer can pair the mask with
+        # the point cloud of that frame
+        mask_msg = self.bridge.cv2_to_imgmsg(
+            np.ascontiguousarray(mask), encoding='mono8', header=img_msg.header)
         confidence_msg = None
         if confidence is not None:
             confidence_msg = self.bridge.cv2_to_imgmsg(
-                confidence, encoding='32FC1', header=img_msg.header)
+                np.ascontiguousarray(confidence), encoding='mono8', header=img_msg.header)
 
-        return mask_msg, confidence_msg
+        mask_color_msg = None
+        if self.mask_color_publisher.get_subscription_count() > 0:
+            mask_color_msg = self.bridge.cv2_to_imgmsg(
+                np.ascontiguousarray(self.segmenter.colorize(mask)),
+                encoding='rgb8', header=img_msg.header)
+
+        return mask_msg, confidence_msg, mask_color_msg
 
     def image_callback(self, img_msg):
         if not self.mask_publisher.is_activated or self.segmenter is None:
             return
 
         try:
-            mask_msg, confidence_msg = self.process_image(img_msg)
+            mask_msg, confidence_msg, mask_color_msg = self.process_image(img_msg)
         except Exception as e:
             self.get_logger().error(f'Could not process frame: {e}')
             return
@@ -228,6 +243,8 @@ class SemanticSegmenter(Node):
         self.mask_publisher.publish(mask_msg)
         if confidence_msg is not None:
             self.confidence_publisher.publish(confidence_msg)
+        if mask_color_msg is not None:
+            self.mask_color_publisher.publish(mask_color_msg)
 
 
 def main(args=None):

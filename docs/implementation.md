@@ -14,7 +14,7 @@ The `semantic_segmentation_layer` needs, on the robot:
 | `segmentation_topic` | raw `sensor_msgs/Image` | One class id per pixel. Compressed images are not accepted. |
 | `pointcloud_topic` | organized `PointCloud2` | Same width × height as the mask, otherwise the message is dropped. |
 | `labels_topic` | `vision_msgs/LabelInfo` | Reliable, transient local. |
-| `confidence_topic` | raw `Image` (optional) | If missing, every confidence is set to 255. |
+| `confidence_topic` | raw `Image` mono8, 0–255 (optional) | If missing, every confidence is set to 255. |
 
 The mask and cloud are paired with ApproximateTime sync (100 ms max interval, queue 10).
 
@@ -26,19 +26,19 @@ realsense ── color/image_raw/compressed (JPEG) ─────────�
    │                                                            │ segmentation/image_raw
    │ depth/color/points (organized, stays on robot)             ▼
    │                                                        semantic_segmentation
-   ▼                                                            │ mask (raw, local)
-semantic_segmentation_layer ◀── /segmentation/mask ◀──          ▼
-                     segmentation_mask_decoder ◀── mask/compressed (PNG) ── segmentation_mask_encoder
-                         (robot, compressed→raw)
-                     label_info (latched, small) ─────────────────────────────────────────▶ robot
+   ▼                                                            │
+semantic_segmentation_layer ◀──────── /mask (mono8) ────────────┤
+                            ◀──────── /confidence (mono8) ──────┤
+                            ◀──────── /label_info (latched) ────┘
 ```
+
+Mask and confidence go back raw: 640x480 mono8 at 15 Hz is about 4.6 MB/s (~37 Mbit/s) each, so about 74 Mbit/s with confidence enabled.
 
 | File | Change |
 |---|---|
-| `turtlelima_bringup/launch/camera.launch.py` | Point cloud on and organized. JPEG q80 for `color/image_raw/compressed`. Every other image topic publishes raw only (no theora, zstd or compressedDepth). New `color_qos`, `depth_qos` and `pointcloud_qos` launch args. |
-| `turtlelima_segmentation/launch/segmentation.launch.py` | Server side. Decodes the compressed color image locally and publishes `mask/compressed` (PNG, lossless). New args `input_transport` and `compress_mask`. |
-| `turtlelima_bringup/launch/segmentation_relay.launch.py` | New, robot side. Decodes `/mask/compressed` into raw `/segmentation/mask` for the layer. |
-| `semantic_segmentation_node.py` | The `mask` and `confidence` publishers keep only the newest message (depth 1, was 10) and stay reliable. |
+| `turtlelima_bringup/launch/camera.launch.py` | Point cloud on and organized. JPEG q80 for `color/image_raw/compressed`. Every other image topic publishes raw only (no theora, zstd or compressedDepth). New `color_qos`, `depth_qos`, `pointcloud_qos` and `pointcloud_filter` launch args. On the Jetson the wrapper's point cloud filter is named `pointcloud__neon_` (the NEON-optimized build), so its parameters use that prefix; on x86 use `pointcloud_filter:=pointcloud`. |
+| `turtlelima_segmentation/launch/segmentation.launch.py` | Server side. Decodes the compressed color image on the server before the node reads it. New arg `input_transport`. The mask is published raw. |
+| `semantic_segmentation_node.py`, `segmenters.py` | Output now matches the layer: `mask` is mono8 class ids, `confidence` is mono8 0–255, both with sensor-data QoS (best effort, depth 1) and the source image header. The colorized mask moved to `mask_color` (rgb8), built only when something subscribes. |
 | `docker/Dockerfile`, `docker-compose.yml`, `docker/cyclonedds.xml` | Cyclone DDS is installed and is the default RMW, with a shared config: multicast for discovery only, receive buffer configurable, static peers through `.env`. |
 
 ### How to launch
@@ -46,8 +46,7 @@ semantic_segmentation_layer ◀── /segmentation/mask ◀──          ▼
 ```bash
 # Robot
 ros2 launch turtlelima_bringup camera.launch.py
-ros2 launch turtlelima_bringup segmentation_relay.launch.py
-# Nav2 layer config: segmentation_topic: /segmentation/mask
+# Nav2 layer config: segmentation_topic: /mask
 #                    pointcloud_topic:   /camera/realsense/depth/color/points
 #                    labels_topic:       /label_info
 
@@ -133,9 +132,9 @@ To see which interface Cyclone uses, start any node with `CYCLONEDDS_URI="$CYCLO
 ### 3. Camera parameters took effect [R]
 
 ```bash
-ros2 param get /camera/realsense pointcloud.enable
-ros2 param get /camera/realsense pointcloud.ordered_pc
-ros2 param get /camera/realsense pointcloud.pointcloud_qos
+ros2 param get /camera/realsense pointcloud__neon_.enable
+ros2 param get /camera/realsense pointcloud__neon_.ordered_pc
+ros2 param get /camera/realsense pointcloud__neon_.pointcloud_qos
 ros2 param list /camera/realsense | grep -i qos
 ros2 param list /camera/realsense | grep enable_pub_plugins
 ```
@@ -199,13 +198,13 @@ Expected: subscriber `segmentation_image_decoder`, reliability `RELIABLE`.
 
 If the decoder is listed under the **raw** topic instead, check its log for `The 'in_transport' parameter is set to: compressed`. The republish nodes only subscribe once something reads their output, so the decoder appears here only after `semantic_segmentation` is active.
 
-The republish setup (parameters, remaps, PNG round trip) was tested in a plain `ros:jazzy-ros-base` container with Cyclone. The camera-side `enable_pub_plugins` and JPEG parameters could not be tested without the camera, which is why steps 3, 4 and 8 check them.
+The decoder setup (parameters, remaps) was tested in a plain `ros:jazzy-ros-base` container with Cyclone. The camera-side `enable_pub_plugins` and JPEG parameters could not be tested without the camera, which is why steps 3, 4 and 8 check them.
 
 ```bash
 # [S]
 ros2 node list
 ```
-Expected: `/segmentation_image_decoder`, `/semantic_segmentation`, `/segmentation_mask_encoder`.
+Expected: `/segmentation_image_decoder` and `/semantic_segmentation`.
 
 ### 7. Rates [R] [S]
 
@@ -228,38 +227,32 @@ Expected: about 15 Hz for the first two. `/mask` runs at the inference rate: 15 
 
 ```bash
 # [R]
-ros2 topic hz /mask/compressed
-ros2 topic hz /segmentation/mask
+ros2 topic hz /mask
 ```
-Expected: the same rate as `/mask` on the server.
+Expected: the same rate as `/mask` on the server. If it is lower on the robot, the raw mask is being lost on the link (check step 8 and the receive buffer in the host setup).
 
 ### 8. Bandwidth [R]
 
 ```bash
 ros2 topic bw /camera/realsense/color/image_raw/compressed
-ros2 topic bw /mask/compressed
+ros2 topic bw /mask
 nload <wifi-interface>     # or: iftop -i <wifi-interface>
 ```
 Expected:
 - Compressed color: about **0.5–1 MB/s** (roughly 40–60 KB per message).
-- Compressed mask: under 0.5 MB/s.
-- Wi-Fi traffic: a few Mbit/s outgoing, instead of the ~110 Mbit/s raw image stream from before.
-
-```bash
-ros2 topic echo /mask/compressed --field format --once
-```
-Expected: a string containing `png compressed`. If it shows `jpeg`, the encoder's format parameter used another prefix. Check it with `ros2 param list /segmentation_mask_encoder | grep format` and fix the name in `segmentation.launch.py`. A JPEG mask corrupts class ids.
+- Mask: about **4.6 MB/s** (307 KB per message at 15 Hz). The same for `/confidence`.
+- Wi-Fi traffic: about 8 Mbit/s outgoing (color) and 37 Mbit/s incoming (mask), instead of the ~110 Mbit/s raw color stream from before.
 
 ### 9. Timestamps and latency [R]
 
 ```bash
-ros2 topic echo /segmentation/mask --field header --once
+ros2 topic echo /mask --field header --once
 ```
 Expected: `frame_id` is `realsense_color_optical_frame`, the same as the color image. The node copies the image header.
 If it shows something else, check that the RealSense publishes the color frame under that name (`ros2 topic echo /camera/realsense/color/image_raw --field header.frame_id --once`).
 
 ```bash
-ros2 topic delay /segmentation/mask
+ros2 topic delay /mask
 ```
 Expected: an average delay well **under 0.6 s** (inference plus two network hops, typically 0.1–0.3 s).
 The layer pairs mask and cloud by stamp, with a queue of 10 clouds (about 0.66 s at 15 Hz). A larger delay means the matching cloud has already left the queue and the mask is dropped. If so, raise `sensor_data_depth` in the layer config.
@@ -280,15 +273,28 @@ Expected: neither warning appears. With `visualize_tile_map: True`, `ros2 topic 
 
 ---
 
-## Known issue outside this change
+## Segmentation node output
 
-The segmentation node publishes `mask` as **rgb8** (a colorized image) and `confidence` as **32FC1** (`semantic_segmentation_node.py`, `process_image`).
-The layer expects **mono8** class ids and a **mono8** confidence in 0–255.
-An rgb8 mask passes the layer's size check, but the layer reads the wrong bytes as class ids, so the costmap will be wrong until the node publishes mono8.
-For the same reason, the confidence image is not relayed to the robot yet. Once it is mono8, add a second decoder to `segmentation_relay.launch.py` and an encoder to `segmentation.launch.py`, as for the mask.
+Check that the node publishes what the layer requires [S] or [R]:
+
+```bash
+ros2 topic echo /mask --field encoding --once
+ros2 topic echo /confidence --field encoding --once
+ros2 topic info -v /mask | grep -i reliability
+ros2 topic echo /label_info --once
+```
+Expected:
+```
+mono8
+mono8
+Reliability: BEST_EFFORT
+class_map: [{class_id: 0, class_name: unknown}, {class_id: 1, class_name: floor}, ...]
+```
+The class names in `label_info` come from the `groups` in `turtlelima_segmentation/config/classes.yaml` (`unknown`, `floor`, `wall`, `obstacle`). Use these names in the layer's `classes:` lists.
+To view the mask, open `/mask_color` in RViz. It is only computed while something subscribes to it.
 
 ## Rollback
 
 - RMW: set `RMW_IMPLEMENTATION=rmw_fastrtps_cpp` in `.env` (Fast DDS is still in the image).
 - Camera: `ros2 launch turtlelima_bringup camera.launch.py transport_format:=png pointcloud:=false`.
-- Server reading raw: `ros2 launch turtlelima_segmentation segmentation.launch.py input_transport:=raw compress_mask:=false`.
+- Server reading raw: `ros2 launch turtlelima_segmentation segmentation.launch.py input_transport:=raw`.
