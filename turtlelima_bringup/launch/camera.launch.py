@@ -128,8 +128,6 @@ def _launch_camera(context):
 
     parameters = {
         'camera_name': cfg['camera_name'],
-        'serial_no': cfg['serial_no'],
-        'usb_port_id': cfg['usb_port_id'],
         'initial_reset': cfg['initial_reset'],
         'wait_for_device_timeout': cfg['wait_for_device_timeout'],
         'reconnect_timeout': cfg['reconnect_timeout'],
