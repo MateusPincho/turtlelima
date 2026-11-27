@@ -34,6 +34,7 @@ setup(
     },
     entry_points={
         'console_scripts': [
+            'odom_relay = turtlelima_navigation.odom_relay:main',
         ],
     },
 )

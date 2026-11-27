@@ -14,7 +14,7 @@ bt_navigator:
   ros__parameters:
     global_frame: odom
     robot_base_frame: base_link
-    odom_topic: /odom
+    odom_topic: /odom_reliable
     transform_tolerance: 0.1
     bt_loop_duration: 10
     default_server_timeout: 20
@@ -33,7 +33,7 @@ bt_navigator:
 
 controller_server:
   ros__parameters:
-    odom_topic: /odom
+    odom_topic: /odom_reliable
     controller_frequency: 20.0
     costmap_update_timeout: 0.30
     min_x_velocity_threshold: 0.001
@@ -370,7 +370,7 @@ velocity_smoother:
     min_velocity: [-0.2, 0.0, -1.0]
     max_accel: [1.0, 0.0, 2.0]
     max_decel: [-1.0, 0.0, -2.0]
-    odom_topic: /odom
+    odom_topic: /odom_reliable
     odom_duration: 0.1
     deadband_velocity: [0.0, 0.0, 0.0]
     velocity_timeout: 1.0

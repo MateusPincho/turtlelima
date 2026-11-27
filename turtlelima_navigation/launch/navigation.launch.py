@@ -43,6 +43,8 @@ def generate_launch_description():
     log_level = LaunchConfiguration('log_level')
     use_voxel_layer = LaunchConfiguration('use_voxel_layer')
     use_semantic_layer = LaunchConfiguration('use_semantic_layer')
+    base_frame = LaunchConfiguration('base_frame')
+    camera_frame = LaunchConfiguration('camera_frame')
 
     param_rewrites = {
         'use_sim_time': use_sim_time,
@@ -92,6 +94,30 @@ def generate_launch_description():
         nav2_node('nav2_waypoint_follower', 'waypoint_follower'),
         nav2_node('nav2_velocity_smoother', 'velocity_smoother',
                   [('cmd_vel', 'cmd_vel_nav'), ('cmd_vel_smoothed', 'cmd_vel')]),
+        # Create 3 odom is best effort; Nav2 subscribes reliable.
+        Node(
+            package='turtlelima_navigation',
+            executable='odom_relay',
+            name='odom_relay',
+            namespace=namespace,
+            output='screen',
+            arguments=['--ros-args', '--log-level', log_level],
+            remappings=[('odom_in', '/odom'), ('odom_out', '/odom_reliable')],
+        ),
+        # Camera mount: 14 cm forward, 12.5 cm up, no rotation (y-aligned).
+        Node(
+            package='tf2_ros',
+            executable='static_transform_publisher',
+            name='camera_static_tf',
+            namespace=namespace,
+            output='screen',
+            arguments=[
+                '--x', '0.14', '--y', '0.0', '--z', '0.125',
+                '--roll', '0.0', '--pitch', '0.0', '--yaw', '0.0',
+                '--frame-id', base_frame, '--child-frame-id', camera_frame,
+            ],
+            remappings=tf_remappings,
+        ),
         Node(
             package='nav2_lifecycle_manager',
             executable='lifecycle_manager',
@@ -128,6 +154,13 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'use_semantic_layer', default_value='true',
             description='Enable the semantic segmentation layer in both costmaps'),
+        DeclareLaunchArgument(
+            'base_frame', default_value='base_link',
+            description='Robot base frame, parent of the camera'),
+        DeclareLaunchArgument(
+            'camera_frame', default_value='realsense_link',
+            description='Root frame of the RealSense TF tree '
+                        '(<camera_name>_<base_frame_id> in turtlelima_bringup)'),
     ]
 
     return LaunchDescription(
